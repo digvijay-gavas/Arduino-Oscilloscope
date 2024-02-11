@@ -28,6 +28,7 @@ String padString(String str, int width) {
 void setup()
 {
   ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // Set ADC prescaler to 128
+  analogReference(INTERNAL);
   Serial.begin(115200);
   while(!Serial);
   lcd.begin(16, 2);
@@ -42,26 +43,58 @@ void setup()
   lcd.print("    \\\-->///");
 }
 
+long lastNativeFFTMillis=millis();
+long lastRemoteFFTMillis=millis();
 void loop()
 {
-  unsigned long timeStart = micros();
-  for(int i=0; i<samples; i++)
+  if( (millis() -lastNativeFFTMillis ) > 500)
   {
-      vReal[i] = analogRead(CHANNEL);
-      vImag[i] = 0;
+    unsigned long timeStart = micros();
+    for(int i=0; i<samples; i++)
+    {
+        vReal[i] = analogRead(CHANNEL);
+        vImag[i] = 0;
+    }
+    float samplingFrequency = 1000000.0 / ((micros() - timeStart) /(float)samples);
+
+    FFT = arduinoFFT(vReal, vImag, samples, samplingFrequency);
+
+    double x = FFT.MajorPeak();
+    //Serial.println(padString(String((int)x),4)+" Hz/"+padString(String((int)samplingFrequency),4)+" Hz"); 
+    lcd.setCursor(0, 0);
+    lcd.print(padString(String((int)x),4)+" Hz/"+padString(String((int)samplingFrequency),4)+" Hz");
+    lcd.setCursor(0, 1);
+    printSlider(map(x, 0, samplingFrequency, 0, 96));
+
+    lastNativeFFTMillis=millis();
   }
-  float samplingFrequency = 1000000.0 / ((micros() - timeStart) /(float)samples);
 
-  FFT = arduinoFFT(vReal, vImag, samples, samplingFrequency);
+  if( (millis() -lastRemoteFFTMillis ) > 5)
+  {
 
-  double x = FFT.MajorPeak();
-  Serial.println(padString(String((int)x),4)+" Hz/"+padString(String((int)samplingFrequency),4)+" Hz"); 
-  lcd.setCursor(0, 0);
-  lcd.print(padString(String((int)x),4)+" Hz/"+padString(String((int)samplingFrequency),4)+" Hz");
-  lcd.setCursor(0, 1);
-  printSlider(map(x, 0, samplingFrequency, 0, 96));
+    if (Serial.available() > 1) {
+      while(Serial.available() > 1)
+        byte command = Serial.read();
+
+      int rSampleSize=512;
+      byte rSamples[rSampleSize];
+      unsigned long timeStart = micros();
+      for(int i=0; i<rSampleSize; i++)
+      {
+          rSamples[i]= analogRead(CHANNEL)/4;
+      }
+      unsigned long rSampleMicros=micros() - timeStart;
+
+      for(int i=0; i<rSampleSize; i++)
+      {
+          Serial.write(rSamples[i]);
+      }
+      Serial.println(rSampleMicros);
+    }
+
+    lastRemoteFFTMillis=millis();
+  }
   
-  delay(500); 
 }
 
 
